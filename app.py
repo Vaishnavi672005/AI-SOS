@@ -10,8 +10,6 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
-import pickle
-from tensorflow.keras.models import load_model
 
 # Import local modules
 from feature_extraction import extract_mfcc_features
@@ -56,7 +54,7 @@ async def startup_event():
     """Initialize models and services on startup."""
     global predictor, distress_detector, sos_manager, location_service
     
-    print("Loading emotion recognition model...")
+    print("Initializing emotion recognition (audio analysis)...")
     predictor = EmotionPredictor(MODEL_PATH, LABELS_PATH)
     
     print("Initializing distress detector...")
@@ -91,7 +89,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "model_loaded": predictor is not None if predictor else False,
+        "model_loaded": predictor is not None,
         "services": {
             "emotion_recognition": predictor is not None,
             "distress_detection": distress_detector is not None,
@@ -314,8 +312,7 @@ async def test_alert(
 async def model_info():
     """Get information about the emotion recognition model."""
     return {
-        "model_path": MODEL_PATH,
-        "labels_path": LABELS_PATH,
+        "model_type": "audio_feature_analysis",
         "sample_rate": 22050,
         "duration_seconds": 3,
         "n_mfcc": 40,

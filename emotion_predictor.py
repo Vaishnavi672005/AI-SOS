@@ -1,74 +1,42 @@
 """
 Emotion Predictor Module
-Loads the trained model and makes predictions
-Uses audio feature analysis as fallback when model fails
+Uses audio feature analysis to detect emotions
+(No TensorFlow required - works with audio characteristics)
 """
 
 import os
 import numpy as np
-from tensorflow.keras.models import load_model
-import pickle
+import librosa
 
 class EmotionPredictor:
     """
-    Emotion recognition predictor using trained neural network model.
-    Falls back to audio feature analysis when model is not available.
+    Emotion recognition predictor using audio feature analysis.
+    Analyzes audio characteristics (energy, pitch, speech rate) to determine emotion.
     """
     
-    def __init__(self, model_path, labels_path):
+    def __init__(self, model_path=None, labels_path=None):
         """
         Initialize the emotion predictor.
         
         Args:
-            model_path: Path to the trained model (.h5 file)
-            labels_path: Path to the label classes file (.npy file)
+            model_path: Not used (kept for compatibility)
+            labels_path: Not used (kept for compatibility)
         """
         self.model_path = model_path
         self.labels_path = labels_path
         self.model = None
-        self.label_classes = None
         
-        self._load_model()
-        self._load_labels()
-    
-    def _load_model(self):
-        """Load the trained Keras model."""
-        try:
-            if os.path.exists(self.model_path):
-                self.model = load_model(self.model_path)
-                print(f"Model loaded from {self.model_path}")
-            else:
-                print(f"Warning: Model not found at {self.model_path}")
-                print("Using audio feature analysis for emotion detection")
-                self.model = None
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Using audio feature analysis for emotion detection")
-            self.model = None
-    
-    def _load_labels(self):
-        """Load the label classes."""
-        try:
-            if os.path.exists(self.labels_path):
-                self.label_classes = np.load(self.labels_path, allow_pickle=True)
-                print(f"Labels loaded: {self.label_classes}")
-            else:
-                print(f"Warning: Labels not found at {self.labels_path}")
-                # Default emotion labels
-                self.label_classes = np.array([
-                    'angry', 'disgust', 'fear', 'happy', 
-                    'neutral', 'pleasant_surprise', 'sad'
-                ])
-        except Exception as e:
-            print(f"Error loading labels: {e}")
-            self.label_classes = np.array([
-                'angry', 'disgust', 'fear', 'happy', 
-                'neutral', 'pleasant_surprise', 'sad'
-            ])
+        # Default emotion labels
+        self.label_classes = np.array([
+            'angry', 'disgust', 'fear', 'happy', 
+            'neutral', 'pleasant_surprise', 'sad'
+        ])
+        
+        print("Emotion predictor initialized (audio analysis mode)")
     
     def predict(self, audio_path):
         """
-        Predict emotion from an audio file.
+        Predict emotion from an audio file using audio feature analysis.
         
         Args:
             audio_path: Path to the audio file
@@ -76,32 +44,7 @@ class EmotionPredictor:
         Returns:
             tuple: (predicted_emotion, confidence)
         """
-        # Import feature extraction
-        from feature_extraction import extract_mfcc_features, extract_all_features
-        
-        # Extract features
-        features = extract_mfcc_features(audio_path)
-        
-        if features is None:
-            return "unknown", 0.0
-        
-        # Prepare features for model
-        features = np.expand_dims(features, axis=0)
-        
-        # Make prediction
-        if self.model is not None:
-            try:
-                prediction = self.model.predict(features, verbose=0)
-                predicted_class = np.argmax(prediction[0])
-                confidence = np.max(prediction[0])
-                
-                emotion = self.label_classes[predicted_class]
-                return emotion, confidence
-            except Exception as e:
-                print(f"Prediction error: {e}")
-                return self._audio_based_predict(audio_path)
-        else:
-            return self._audio_based_predict(audio_path)
+        return self._audio_based_predict(audio_path)
     
     def _audio_based_predict(self, audio_path):
         """
@@ -109,8 +52,6 @@ class EmotionPredictor:
         Analyzes audio characteristics to determine emotion.
         """
         try:
-            import librosa
-            
             # Load audio
             y, sr = librosa.load(audio_path, sr=22050, duration=3)
             
@@ -145,6 +86,10 @@ class EmotionPredictor:
             mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
             mfcc_mean = np.mean(mfcc, axis=1)
             
+            # 6. Spectral rolloff
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+            sr_mean = np.mean(spectral_rolloff)
+            
             # Analyze features to determine emotion
             # High energy + high pitch variation + fast speech = Angry/Fear
             # Low energy + low pitch + slow speech = Sad
@@ -163,50 +108,62 @@ class EmotionPredictor:
             }
             
             # Angry: High energy, high pitch, high zcr
-            if rms_mean > 0.1:
+            if rms_mean > 0.08:
+                scores['angry'] += 0.4
+            if pitch_mean > 180:
                 scores['angry'] += 0.3
-            if pitch_mean > 200:
+            if zcr_mean > 0.08:
                 scores['angry'] += 0.2
-            if zcr_mean > 0.1:
-                scores['angry'] += 0.2
+            if rms_std > 0.08:
+                scores['angry'] += 0.1
             
-            # Fear: High pitch, irregular speech
-            if pitch_mean > 250:
+            # Fear: High pitch, irregular speech, variable energy
+            if pitch_mean > 200:
                 scores['fear'] += 0.3
-            if pitch_std > 100:
-                scores['fear'] += 0.2
+            if pitch_std > 80:
+                scores['fear'] += 0.3
             if rms_std > 0.1:
                 scores['fear'] += 0.2
+            if zcr_std > 0.05:
+                scores['fear'] += 0.1
             
             # Sad: Low energy, low pitch, slow speech
             if rms_mean < 0.05:
-                scores['sad'] += 0.4
-            if pitch_mean < 150:
-                scores['sad'] += 0.2
+                scores['sad'] += 0.5
+            if pitch_mean < 160:
+                scores['sad'] += 0.3
             if zcr_mean < 0.05:
                 scores['sad'] += 0.2
             
             # Happy: High energy, medium-high pitch, regular
-            if rms_mean > 0.08:
+            if rms_mean > 0.06:
                 scores['happy'] += 0.3
-            if 150 < pitch_mean < 300:
+            if 150 < pitch_mean < 280:
+                scores['happy'] += 0.3
+            if zcr_std < 0.04:
                 scores['happy'] += 0.2
-            if zcr_std < 0.05:
-                scores['happy'] += 0.2
+            if sc_mean > 2500:
+                scores['happy'] += 0.1
             
             # Neutral: Medium energy, normal pitch
-            if 0.03 < rms_mean < 0.1:
+            if 0.03 < rms_mean < 0.08:
                 scores['neutral'] += 0.3
-            if 100 < pitch_mean < 250:
+            if 120 < pitch_mean < 220:
                 scores['neutral'] += 0.3
+            if zcr_std < 0.03:
+                scores['neutral'] += 0.2
             
             # Disgust: Similar to angry but with more irregularity
-            if rms_std > 0.15:
+            if rms_std > 0.12:
+                scores['disgust'] += 0.4
+            if zcr_std > 0.06:
                 scores['disgust'] += 0.3
             
             # Pleasant surprise: High energy with rising pitch pattern
-            if rms_mean > 0.12:
-                scores['pleasant_surprise'] += 0.2
+            if rms_mean > 0.1:
+                scores['pleasant_surprise'] += 0.3
+            if pitch_mean > 220:
+                scores['pleasant_surprise'] += 0.3
             
             # Normalize scores and find best match
             total_score = sum(scores.values())
@@ -219,8 +176,8 @@ class EmotionPredictor:
             confidence = scores[best_emotion]
             
             # Ensure minimum confidence
-            if confidence < 0.3:
-                confidence = 0.3
+            if confidence < 0.25:
+                confidence = 0.25
             
             print(f"Audio-based prediction: {best_emotion} (confidence: {confidence:.2f})")
             print(f"  Energy: {rms_mean:.3f}, Pitch: {pitch_mean:.1f}Hz, ZCR: {zcr_mean:.3f}")
@@ -231,12 +188,6 @@ class EmotionPredictor:
             print(f"Audio analysis error: {e}")
             # Ultimate fallback
             return "neutral", 0.5
-    
-    def _fallback_predict(self, features):
-        """
-        Fallback prediction when model is not available.
-        """
-        return "neutral", 0.5
     
     def predict_batch(self, audio_paths):
         """
@@ -255,21 +206,19 @@ class EmotionPredictor:
         return results
     
     def get_model_summary(self):
-        """Get model architecture summary."""
-        if self.model is not None:
-            return self.model.summary()
-        return "Model not loaded - using audio feature analysis"
+        """Get model info."""
+        return "Using audio feature analysis (no deep learning model)"
 
 
 # Helper function for direct prediction
-def quick_predict(audio_path, model_path, labels_path):
+def quick_predict(audio_path, model_path=None, labels_path=None):
     """
     Quick prediction function for single audio file.
     
     Args:
         audio_path: Path to audio file
-        model_path: Path to model
-        labels_path: Path to labels
+        model_path: Not used
+        labels_path: Not used
     
     Returns:
         tuple: (emotion, confidence)
@@ -284,10 +233,7 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1:
         audio_file = sys.argv[1]
-        model_path = "model/emotion_model.h5"
-        labels_path = "model/label_classes.npy"
-        
-        emotion, confidence = quick_predict(audio_file, model_path, labels_path)
+        emotion, confidence = quick_predict(audio_file)
         print(f"Emotion: {emotion}, Confidence: {confidence}")
     else:
         print("Usage: python emotion_predictor.py <audio_file>")
