@@ -1,204 +1,244 @@
 """
 Emotion Predictor Module
-Uses audio feature analysis to detect emotions
-(No TensorFlow required - works with audio characteristics)
+Improved audio feature analysis for emotion detection
 """
 
 import os
 import numpy as np
 import librosa
+from scipy import stats
 
 class EmotionPredictor:
     """
-    Emotion recognition predictor using audio feature analysis.
-    Analyzes audio characteristics (energy, pitch, speech rate) to determine emotion.
+    Emotion recognition using audio feature analysis.
     """
     
     def __init__(self, model_path=None, labels_path=None):
-        """
-        Initialize the emotion predictor.
-        
-        Args:
-            model_path: Not used (kept for compatibility)
-            labels_path: Not used (kept for compatibility)
-        """
         self.model_path = model_path
         self.labels_path = labels_path
-        self.model = None
-        
-        # Default emotion labels
         self.label_classes = np.array([
             'angry', 'disgust', 'fear', 'happy', 
             'neutral', 'pleasant_surprise', 'sad'
         ])
-        
-        print("Emotion predictor initialized (audio analysis mode)")
+        print("Emotion predictor initialized (improved audio analysis)")
     
     def predict(self, audio_path):
-        """
-        Predict emotion from an audio file using audio feature analysis.
-        
-        Args:
-            audio_path: Path to the audio file
-        
-        Returns:
-            tuple: (predicted_emotion, confidence)
-        """
         return self._audio_based_predict(audio_path)
     
     def _audio_based_predict(self, audio_path):
         """
-        Audio feature-based emotion prediction.
-        Analyzes audio characteristics to determine emotion.
+        Improved audio feature-based emotion prediction.
         """
         try:
             # Load audio
             y, sr = librosa.load(audio_path, sr=22050, duration=3)
             
-            # Extract various audio features
-            # 1. RMS energy (volume)
-            rms = librosa.feature.rms(y=y)[0]
-            rms_mean = np.mean(rms)
-            rms_std = np.std(rms)
+            # Ensure we have enough audio
+            if len(y) < sr * 0.5:  # Less than 0.5 seconds
+                return "neutral", 0.3
             
-            # 2. Zero crossing rate (speech characteristics)
-            zcr = librosa.feature.zero_crossing_rate(y)[0]
-            zcr_mean = np.mean(zcr)
-            zcr_std = np.std(zcr)
+            # Extract features
+            features = self._extract_features(y, sr)
             
-            # 3. Spectral centroid (brightness/timbre)
-            spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-            sc_mean = np.mean(spectral_centroid)
+            # Classify based on features
+            emotion, confidence = self._classify_emotion(features)
             
-            # 4. Pitch/frequency analysis
-            pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
-            pitch_values = []
-            for t in range(pitches.shape[1]):
-                index = magnitudes[:, t].argmax()
-                pitch = pitches[index, t]
-                if pitch > 0:
-                    pitch_values.append(pitch)
+            print(f"Prediction: {emotion} ({confidence:.2f})")
+            print(f"  Energy: {features['energy']:.3f}, Pitch: {features['pitch']:.0f}Hz, "
+                  f"Speech rate: {features['speech_rate']:.1f}")
             
-            pitch_mean = np.mean(pitch_values) if pitch_values else 0
-            pitch_std = np.std(pitch_values) if pitch_values else 0
-            
-            # 5. MFCC for voice characteristics
-            mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-            mfcc_mean = np.mean(mfcc, axis=1)
-            
-            # 6. Spectral rolloff
-            spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
-            sr_mean = np.mean(spectral_rolloff)
-            
-            # Analyze features to determine emotion
-            # High energy + high pitch variation + fast speech = Angry/Fear
-            # Low energy + low pitch + slow speech = Sad
-            # High energy + high pitch + regular rhythm = Happy
-            # Medium energy + neutral pitch = Neutral
-            
-            # Calculate emotion scores
-            scores = {
-                'angry': 0.0,
-                'fear': 0.0,
-                'sad': 0.0,
-                'happy': 0.0,
-                'neutral': 0.0,
-                'disgust': 0.0,
-                'pleasant_surprise': 0.0
-            }
-            
-            # Angry: High energy, high pitch, high zcr
-            if rms_mean > 0.08:
-                scores['angry'] += 0.4
-            if pitch_mean > 180:
-                scores['angry'] += 0.3
-            if zcr_mean > 0.08:
-                scores['angry'] += 0.2
-            if rms_std > 0.08:
-                scores['angry'] += 0.1
-            
-            # Fear: High pitch, irregular speech, variable energy
-            if pitch_mean > 200:
-                scores['fear'] += 0.3
-            if pitch_std > 80:
-                scores['fear'] += 0.3
-            if rms_std > 0.1:
-                scores['fear'] += 0.2
-            if zcr_std > 0.05:
-                scores['fear'] += 0.1
-            
-            # Sad: Low energy, low pitch, slow speech
-            if rms_mean < 0.05:
-                scores['sad'] += 0.5
-            if pitch_mean < 160:
-                scores['sad'] += 0.3
-            if zcr_mean < 0.05:
-                scores['sad'] += 0.2
-            
-            # Happy: High energy, medium-high pitch, regular
-            if rms_mean > 0.06:
-                scores['happy'] += 0.3
-            if 150 < pitch_mean < 280:
-                scores['happy'] += 0.3
-            if zcr_std < 0.04:
-                scores['happy'] += 0.2
-            if sc_mean > 2500:
-                scores['happy'] += 0.1
-            
-            # Neutral: Medium energy, normal pitch
-            if 0.03 < rms_mean < 0.08:
-                scores['neutral'] += 0.3
-            if 120 < pitch_mean < 220:
-                scores['neutral'] += 0.3
-            if zcr_std < 0.03:
-                scores['neutral'] += 0.2
-            
-            # Disgust: Similar to angry but with more irregularity
-            if rms_std > 0.12:
-                scores['disgust'] += 0.4
-            if zcr_std > 0.06:
-                scores['disgust'] += 0.3
-            
-            # Pleasant surprise: High energy with rising pitch pattern
-            if rms_mean > 0.1:
-                scores['pleasant_surprise'] += 0.3
-            if pitch_mean > 220:
-                scores['pleasant_surprise'] += 0.3
-            
-            # Normalize scores and find best match
-            total_score = sum(scores.values())
-            if total_score > 0:
-                for emotion in scores:
-                    scores[emotion] /= total_score
-            
-            # Get the emotion with highest score
-            best_emotion = max(scores, key=scores.get)
-            confidence = scores[best_emotion]
-            
-            # Ensure minimum confidence
-            if confidence < 0.25:
-                confidence = 0.25
-            
-            print(f"Audio-based prediction: {best_emotion} (confidence: {confidence:.2f})")
-            print(f"  Energy: {rms_mean:.3f}, Pitch: {pitch_mean:.1f}Hz, ZCR: {zcr_mean:.3f}")
-            
-            return best_emotion, confidence
+            return emotion, confidence
             
         except Exception as e:
-            print(f"Audio analysis error: {e}")
-            # Ultimate fallback
+            print(f"Error: {e}")
             return "neutral", 0.5
     
+    def _extract_features(self, y, sr):
+        """Extract comprehensive audio features."""
+        features = {}
+        
+        # 1. Energy (RMS)
+        rms = librosa.feature.rms(y=y)[0]
+        features['energy'] = np.mean(rms)
+        features['energy_std'] = np.std(rms)
+        features['energy_max'] = np.max(rms)
+        
+        # 2. Zero Crossing Rate (speech rate indicator)
+        zcr = librosa.feature.zero_crossing_rate(y)[0]
+        features['zcr'] = np.mean(zcr)
+        features['zcr_std'] = np.std(zcr)
+        
+        # 3. Pitch estimation using autocorrelation
+        try:
+            # Simple pitch detection via autocorrelation
+            autocorr = np.correlate(y, y, mode='full')
+            autocorr = autocorr[len(autocorr)//2:]
+            # Find the first peak after the zero-lag peak
+            min_lag = int(sr / 500)  # Max frequency 500Hz
+            max_lag = int(sr / 50)   # Min frequency 50Hz
+            if max_lag < len(autocorr):
+                peak_idx = np.argmax(autocorr[min_lag:max_lag]) + min_lag
+                if peak_idx > 0:
+                    features['pitch'] = sr / peak_idx
+                else:
+                    features['pitch'] = 150  # Default
+            else:
+                features['pitch'] = 150
+        except:
+            features['pitch'] = 150
+        
+        # 4. Spectral features
+        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+        features['spectral_centroid'] = np.mean(spectral_centroid)
+        
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+        features['spectral_rolloff'] = np.mean(spectral_rolloff)
+        
+        # 5. MFCC features (voice timbre)
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        features['mfcc_mean'] = np.mean(mfcc, axis=1)
+        features['mfcc_std'] = np.std(mfcc, axis=1)
+        
+        # 6. Speech rate estimation (based on energy peaks)
+        energy_threshold = np.mean(rms) + np.std(rms)
+        speech_frames = np.sum(rms > energy_threshold)
+        features['speech_rate'] = (speech_frames / len(rms)) * sr / 512  # Approximate
+        
+        # 7. Voice intensity variation
+        features['intensity_var'] = np.var(rms) / (np.mean(rms) + 1e-10)
+        
+        return features
+    
+    def _classify_emotion(self, f):
+        """Classify emotion based on extracted features."""
+        scores = {}
+        
+        energy = f['energy']
+        pitch = f.get('pitch', 150)
+        zcr = f['zcr']
+        speech_rate = f.get('speech_rate', 0)
+        intensity_var = f.get('intensity_var', 0)
+        spectral_centroid = f.get('spectral_centroid', 2000)
+        
+        # Normalize pitch to typical range
+        pitch = max(50, min(400, pitch))
+        
+        # EMOTION SCORING RULES
+        # =====================
+        
+        # ANGRY: High energy, high pitch, high speech rate, high variation
+        angry_score = 0.0
+        if energy > 0.05:
+            angry_score += 0.3
+        if energy > 0.1:
+            angry_score += 0.2
+        if pitch > 170:
+            angry_score += 0.2
+        if pitch > 200:
+            angry_score += 0.15
+        if zcr > 0.06:
+            angry_score += 0.15
+        if intensity_var > 0.3:
+            angry_score += 0.1
+        scores['angry'] = min(angry_score, 1.0)
+        
+        # FEAR: Very high pitch, irregular, variable energy
+        fear_score = 0.0
+        if pitch > 200:
+            fear_score += 0.3
+        if pitch > 250:
+            fear_score += 0.2
+        if intensity_var > 0.4:
+            fear_score += 0.2
+        if zcr > 0.08:
+            fear_score += 0.15
+        if energy < 0.08:  # Often quiet with spikes
+            fear_score += 0.15
+        scores['fear'] = min(fear_score, 1.0)
+        
+        # SAD: Low energy, low pitch, slow speech
+        sad_score = 0.0
+        if energy < 0.04:
+            sad_score += 0.4
+        if energy < 0.02:
+            sad_score += 0.2
+        if pitch < 150:
+            sad_score += 0.2
+        if pitch < 120:
+            sad_score += 0.15
+        if speech_rate < 3:
+            sad_score += 0.15
+        scores['sad'] = min(sad_score, 1.0)
+        
+        # HAPPY: Medium-high energy, medium-high pitch, regular
+        happy_score = 0.0
+        if energy > 0.04:
+            happy_score += 0.2
+        if energy > 0.07:
+            happy_score += 0.15
+        if 140 < pitch < 280:
+            happy_score += 0.25
+        if intensity_var < 0.25:
+            happy_score += 0.2
+        if spectral_centroid > 2000:
+            happy_score += 0.1
+        if zcr < 0.07:
+            happy_score += 0.1
+        scores['happy'] = min(happy_score, 1.0)
+        
+        # DISGUST: Irregular, low-medium energy, unusual timbre
+        disgust_score = 0.0
+        if intensity_var > 0.35:
+            disgust_score += 0.3
+        if zcr > 0.07:
+            disgust_score += 0.2
+        if energy < 0.06:
+            disgust_score += 0.2
+        if spectral_centroid < 1800:
+            disgust_score += 0.2
+        scores['disgust'] = min(disgust_score, 1.0)
+        
+        # PLEASANT SURPRISE: High energy, high pitch, rising pattern
+        surprise_score = 0.0
+        if energy > 0.08:
+            surprise_score += 0.3
+        if pitch > 220:
+            surprise_score += 0.3
+        if intensity_var > 0.3:
+            surprise_score += 0.2
+        if spectral_centroid > 2500:
+            surprise_score += 0.2
+        scores['pleasant_surprise'] = min(surprise_score, 1.0)
+        
+        # NEUTRAL: Default - not matching other emotions strongly
+        neutral_score = 0.3
+        if 0.02 < energy < 0.08:
+            neutral_score += 0.2
+        if 120 < pitch < 200:
+            neutral_score += 0.2
+        if intensity_var < 0.2:
+            neutral_score += 0.2
+        if zcr < 0.06:
+            neutral_score += 0.1
+        scores['neutral'] = min(neutral_score, 1.0)
+        
+        # Find best match
+        best_emotion = max(scores, key=scores.get)
+        confidence = scores[best_emotion]
+        
+        # Boost confidence if there's a clear winner
+        sorted_scores = sorted(scores.values(), reverse=True)
+        if len(sorted_scores) > 1:
+            margin = sorted_scores[0] - sorted_scores[1]
+            if margin > 0.2:
+                confidence = min(confidence * 1.2, 1.0)
+        
+        # Minimum confidence
+        confidence = max(confidence, 0.35)
+        
+        return best_emotion, confidence
+    
     def predict_batch(self, audio_paths):
-        """
-        Predict emotions for multiple audio files.
-        
-        Args:
-            audio_paths: List of paths to audio files
-        
-        Returns:
-            List of tuples: [(emotion, confidence), ...]
-        """
         results = []
         for audio_path in audio_paths:
             result = self.predict(audio_path)
@@ -206,34 +246,18 @@ class EmotionPredictor:
         return results
     
     def get_model_summary(self):
-        """Get model info."""
-        return "Using audio feature analysis (no deep learning model)"
+        return "Audio feature analysis (improved)"
 
 
-# Helper function for direct prediction
 def quick_predict(audio_path, model_path=None, labels_path=None):
-    """
-    Quick prediction function for single audio file.
-    
-    Args:
-        audio_path: Path to audio file
-        model_path: Not used
-        labels_path: Not used
-    
-    Returns:
-        tuple: (emotion, confidence)
-    """
     predictor = EmotionPredictor(model_path, labels_path)
     return predictor.predict(audio_path)
 
 
 if __name__ == "__main__":
-    # Test the predictor
     import sys
-    
     if len(sys.argv) > 1:
-        audio_file = sys.argv[1]
-        emotion, confidence = quick_predict(audio_file)
+        emotion, confidence = quick_predict(sys.argv[1])
         print(f"Emotion: {emotion}, Confidence: {confidence}")
     else:
         print("Usage: python emotion_predictor.py <audio_file>")
