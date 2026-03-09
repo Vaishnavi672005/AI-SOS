@@ -8,6 +8,7 @@ import numpy as np
 import librosa
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import pickle
 from tensorflow.keras.models import load_model
@@ -26,6 +27,15 @@ app = FastAPI(
     title="AI SOS System API",
     description="Speech Emotion Recognition and SOS Alert System",
     version="1.0.0"
+)
+
+# Add CORS middleware to allow mobile app connections
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize components
@@ -337,4 +347,3 @@ async def get_location(latitude: float, longitude: float):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

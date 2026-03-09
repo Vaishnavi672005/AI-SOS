@@ -23,15 +23,15 @@ class DistressDetector:
     # Low-risk/positive emotions
     SAFE_EMOTIONS = ['happy', 'neutral']
     
-    # Confidence thresholds
-    HIGH_CONFIDENCE_THRESHOLD = 0.7
-    MODERATE_CONFIDENCE_THRESHOLD = 0.5
+    # Lower confidence thresholds for more sensitive detection
+    HIGH_CONFIDENCE_THRESHOLD = 0.5
+    MODERATE_CONFIDENCE_THRESHOLD = 0.25
     
     def __init__(self):
         """Initialize the distress detector."""
         self.distress_count = 0
         self.consecutive_distress = 0
-        self.threshold = int(os.getenv('DISTRESS_THRESHOLD', '3'))
+        self.threshold = int(os.getenv('DISTRESS_THRESHOLD', '1'))
     
     def is_distress(self, emotion, confidence):
         """
@@ -46,18 +46,13 @@ class DistressDetector:
         """
         emotion = emotion.lower() if emotion else ""
         
-        # Check for high-risk emotions with high confidence
+        # Check for high-risk emotions - trigger immediately for distress emotions
         if emotion in self.DISTRESS_EMOTIONS:
-            if confidence >= self.HIGH_CONFIDENCE_THRESHOLD:
+            # For high-risk emotions, trigger even with lower confidence
+            if confidence >= self.MODERATE_CONFIDENCE_THRESHOLD:
                 self.consecutive_distress += 1
                 self.distress_count += 1
                 return True
-            elif confidence >= self.MODERATE_CONFIDENCE_THRESHOLD:
-                self.consecutive_distress += 1
-                if self.consecutive_distress >= self.threshold:
-                    self.distress_count += 1
-                    return True
-                return False
         
         # Check for moderate risk emotions
         elif emotion in self.MODERATE_RISK_EMOTIONS:
@@ -134,7 +129,7 @@ class DistressDetector:
 
 
 # Standalone function for simple distress check
-def check_distress(emotion, confidence, threshold=3):
+def check_distress(emotion, confidence, threshold=1):
     """
     Simple function to check for distress.
     
@@ -162,6 +157,8 @@ if __name__ == "__main__":
         ("happy", 0.7),
         ("neutral", 0.8),
         ("disgust", 0.5),
+        ("fear", 0.3),  # Lower confidence test
+        ("angry", 0.25),  # Lower confidence test
     ]
     
     print("Distress Detection Tests:")
@@ -173,4 +170,3 @@ if __name__ == "__main__":
         print(f"Emotion: {emotion:20s} | Confidence: {confidence:.2f} | Distress: {is_distress} | Level: {level}")
         print(f"  Recommendation: {rec}")
         print()
-
