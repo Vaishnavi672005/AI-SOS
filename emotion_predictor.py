@@ -44,7 +44,7 @@ class EmotionPredictor:
             emotion, confidence = self._classify_emotion(features)
             
             print(f"Prediction: {emotion} ({confidence:.2f})")
-            print(f"  Energy: {features['energy']:.3f}, Pitch: {features['pitch']:.0f}Hz")
+            print(f"  Energy: {features['energy']:.3f}, Pitch: {features.get('pitch', 150):.0f}Hz")
             
             return emotion, confidence
             
@@ -105,6 +105,9 @@ class EmotionPredictor:
         zcr = f['zcr']
         intensity_var = f.get('intensity_var', 0)
         spectral_centroid = f.get('spectral_centroid', 2000)
+        
+        # DEBUG: Print raw features
+        print(f"DEBUG: energy={energy:.4f}, pitch={pitch:.1f}, zcr={zcr:.4f}, intensity_var={intensity_var:.4f}")
         
         # Normalize pitch
         pitch = max(50, min(400, pitch))
@@ -195,6 +198,9 @@ class EmotionPredictor:
         if intensity_var < 0.15:
             neutral += 0.2
         scores['neutral'] = min(neutral, 0.8)
+        
+        # DEBUG: Print all scores
+        print(f"DEBUG SCORES: {scores}")
         
         # Find best match
         best_emotion = max(scores, key=scores.get)
