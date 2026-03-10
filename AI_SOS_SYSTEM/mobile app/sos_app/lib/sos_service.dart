@@ -21,8 +21,8 @@ class SosService {
   // - iOS Simulator: use localhost (or 127.0.0.1)
   // - Physical Device: use your computer's local IP (e.g., 192.168.1.100)
   
-  // Set this to true when deploying to production
-  static const bool isProduction = false;
+// Set this to true when deploying to production
+  static const bool isProduction = true;
   
   // Replace this with your Render URL when deployed
   // Format: "https://your-service-name.onrender.com"
