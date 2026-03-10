@@ -1,0 +1,1 @@
+Fix emotion detection - detect fear and trigger SOS alerts  

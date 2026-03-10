@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Test files (not needed for deployment)
+test_*.py
+test_*.pyc
+
+# Temp files
+temp_*
+*.wav
+
+# Large audio dataset (TESS)
+AI_SOS_SYSTEM/backend/TESS/
+
+# Flutter build files
+AI_SOS_SYSTEM/mobile app/sos_app/build/
+AI_SOS_SYSTEM/mobile app/sos_app/.flutter-plugins
+AI_SOS_SYSTEM/mobile app/sos_app/.flutter-plugins-dependencies
+
+# Local config
+c
+

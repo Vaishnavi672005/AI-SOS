@@ -1,0 +1,47 @@
+# Ignore Docker files
+.dockerignore
+Dockerfile
+docker-compose.yml
+env.example
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Ignore virtual environments
+venv/
+.venv/
+env/
+
+# Ignore Git
+.git/
+.gitignore
+
+# Ignore IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore tests (not needed in container)
+*test*.py
+*_test.py
+
+# Ignore model training data
+AI_SOS_SYSTEM/backend/TESS/
+
+# Ignore mobile app
+AI_SOS_SYSTEM/mobile app/
+

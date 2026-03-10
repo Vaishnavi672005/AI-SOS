@@ -1,0 +1,36 @@
+name: sos_app
+description: "AI SOS - Speech Emotion Recognition & SOS Alert System"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  record: ^5.2.1
+  path_provider: ^2.1.1
+  geolocator: ^10.1.0
+  permission_handler: ^11.1.0
+  audioplayers: ^5.2.1
+  
+  # Background service for continuous monitoring
+  flutter_background_service: ^5.0.10
+  flutter_local_notifications: ^18.0.1
+  battery_plus: ^6.2.1
+  
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+dependency_overrides:
+  record_linux: ^1.0.0
+
+flutter:
+  uses-material-design: true
