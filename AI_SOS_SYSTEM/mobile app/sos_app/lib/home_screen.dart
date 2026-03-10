@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _countdownSeconds = 10;
   Timer? _countdownTimer;
   Position? _pendingAlertPosition;
+  bool _countdownCancelled = false;  // Flag to track if countdown was cancelled
 
   @override
   void initState() {
@@ -193,6 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Show countdown dialog before sending alert
   void _showCountdownDialog() {
+    _countdownCancelled = false;  // Reset the flag
     setState(() {
       _showCountdown = true;
       _countdownSeconds = 10;
@@ -205,13 +207,22 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
       
+      // Check if countdown was cancelled
+      if (_countdownCancelled) {
+        timer.cancel();
+        return;
+      }
+      
       setState(() {
         _countdownSeconds--;
       });
       
       if (_countdownSeconds <= 0) {
         timer.cancel();
-        _sendActualAlert();
+        // Check again before sending
+        if (!_countdownCancelled) {
+          _sendActualAlert();
+        }
       }
     });
     
@@ -231,12 +242,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Cancel the countdown
   void _cancelCountdown() {
+    _countdownCancelled = true;  // Mark as cancelled
     _countdownTimer?.cancel();
-    Navigator.of(context).pop(); // Close dialog
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.of(context).pop(); // Close dialog
+    }
     setState(() {
       _showCountdown = false;
       _countdownSeconds = 10;
-      _statusMessage = "✅ Alert cancelled. Monitoring continues...";
+      _distressDetected = false;  // Reset distress state
+      _statusMessage = "✅ Alert cancelled. You are safe.";
     });
   }
 
