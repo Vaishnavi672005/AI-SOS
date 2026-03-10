@@ -144,7 +144,7 @@ class EmotionPredictor:
     
     def _classify_emotion(self, f):
         """
-        Classify emotion with BALANCED scoring for fear detection.
+        Classify emotion with BALANCED scoring - less aggressive distress detection.
         """
         
         energy = f['energy']
@@ -161,86 +161,92 @@ class EmotionPredictor:
         # Normalize pitch
         pitch = max(50, min(400, pitch))
         
-        # Calculate scores - BALANCED thresholds
+        # Calculate scores - MORE BALANCED thresholds
         scores = {}
         
-        # FEAR: Detect trembling, high pitch variation
+        # FEAR: Detect trembling, high pitch variation - HIGHER THRESHOLDS
         fear = 0
-        if pitch_std > 25:  # High pitch variation = nervous/afraid
-            fear += 0.6
-        if pitch > 180:  # Higher pitch
-            fear += 0.3
-        if intensity_var > 0.15:  # Variable intensity
+        if pitch_std > 35:  # Very high pitch variation
+            fear += 0.5
+        if pitch > 220:  # Very high pitch
             fear += 0.4
-        if zcr > 0.04:  # Higher zcr
-            fear += 0.3
-        if rms_dynamic_range > 0.02:  # Trembling
+        if intensity_var > 0.3:  # Very variable intensity
             fear += 0.4
-        if energy < 0.08:  # Lower energy
-            fear += 0.2
+        if zcr > 0.08:  # Very high zcr
+            fear += 0.3
+        if rms_dynamic_range > 0.05:  # Strong trembling
+            fear += 0.5
+        if energy < 0.05:  # Very low energy
+            fear += 0.3
         scores['fear'] = min(fear, 1.0)
         
-        # ANGRY: High energy OR high pitch OR high zcr
+        # ANGRY: Very high energy - HIGHER THRESHOLDS
         angry = 0
-        if energy > 0.03:
-            angry += 0.5
-        if energy > 0.06:
+        if energy > 0.08:  # Much higher energy
+            angry += 0.6
+        if energy > 0.12:
             angry += 0.3
-        if pitch > 140:
+        if pitch > 200:  # Much higher pitch
             angry += 0.3
-        if zcr > 0.04:
+        if zcr > 0.08:  # Much higher zcr
             angry += 0.3
-        if intensity_var > 0.15:
+        if intensity_var > 0.3:
             angry += 0.3
         scores['angry'] = min(angry, 1.0)
         
-        # SAD: Low energy OR low pitch
+        # SAD: Very low energy - HIGHER THRESHOLDS
         sad = 0
+        if energy < 0.01:  # Very low energy
+            sad += 0.7
         if energy < 0.02:
-            sad += 0.6
-        if energy < 0.04:
             sad += 0.3
-        if pitch < 160:
-            sad += 0.3
+        if pitch < 100:  # Very low pitch
+            sad += 0.4
         if pitch < 130:
             sad += 0.3
-        if zcr < 0.03:
+        if zcr < 0.02:  # Much lower zcr
             sad += 0.3
         scores['sad'] = min(sad, 1.0)
         
-        # HAPPY: Medium energy + normal pitch + regular patterns
+        # HAPPY: Positive indicators - ENHANCED
         happy = 0
-        if energy > 0.02:
+        if energy > 0.03:
             happy += 0.3
-        if 100 < pitch < 280:
+        if 100 < pitch < 250:
             happy += 0.4
-        if intensity_var < 0.3:
+        if intensity_var < 0.25:
             happy += 0.3
-        if spectral_centroid > 1000:
-            happy += 0.2
+        if spectral_centroid > 1500:
+            happy += 0.3
+        # Regular, consistent patterns
+        if intensity_var < 0.15 and pitch_std < 25:
+            happy += 0.3
         scores['happy'] = min(happy, 1.0)
         
-        # DISGUST: Irregular patterns with low energy
+        # DISGUST: Higher thresholds
         disgust = 0
-        if intensity_var > 0.15:
+        if intensity_var > 0.35:
             disgust += 0.4
-        if zcr > 0.04:
+        if zcr > 0.08:
             disgust += 0.3
-        if energy < 0.04:
+        if energy < 0.02:
             disgust += 0.4
         scores['disgust'] = min(disgust, 1.0)
         
-        # NEUTRAL: Calm, regular patterns
-        neutral = 0.3
-        if 0.01 < energy < 0.04:
-            neutral += 0.2
-        if 120 < pitch < 200:
-            neutral += 0.2
-        if intensity_var < 0.1:
-            neutral += 0.2
+        # NEUTRAL: Calm, regular patterns - STRONGER
+        neutral = 0.4
+        if 0.02 < energy < 0.08:
+            neutral += 0.3
+        if 120 < pitch < 220:
+            neutral += 0.3
+        if intensity_var < 0.15:
+            neutral += 0.3
         if pitch_std < 20:
             neutral += 0.2
-        scores['neutral'] = min(neutral, 0.8)
+        # Most audio should be neutral if no strong emotion indicators
+        if intensity_var < 0.2 and energy > 0.01 and energy < 0.1:
+            neutral += 0.2
+        scores['neutral'] = min(neutral, 0.95)
         
         # DEBUG: Print all scores
         print(f"DEBUG SCORES: {scores}")
@@ -249,22 +255,18 @@ class EmotionPredictor:
         best_emotion = max(scores, key=scores.get)
         confidence = scores[best_emotion]
         
-        # If neutral wins but distress has decent score, prefer distress
-        if best_emotion == 'neutral' and confidence < 0.6:
-            distress_emotions = ['fear', 'angry', 'sad', 'disgust']
-            distress_scores = {e: scores[e] for e in distress_emotions}
-            best_distress = max(distress_scores, key=distress_scores.get)
-            
-            # If any distress emotion has significant score, prefer it
-            if scores[best_distress] >= 0.4:
-                best_emotion = best_distress
-                confidence = scores[best_distress]
-        
-        # Ensure minimum confidence
+        # Only trigger distress for very high confidence
+        # Require much higher thresholds for distress detection
         if best_emotion in ['fear', 'angry', 'sad', 'disgust']:
-            confidence = max(confidence, 0.4)
-        else:
-            confidence = max(confidence, 0.35)
+            # Only prefer distress if confidence is very high
+            if confidence < 0.55:
+                # Check if neutral has decent score
+                if scores['neutral'] >= 0.5:
+                    best_emotion = 'neutral'
+                    confidence = scores['neutral']
+        
+        # Ensure minimum confidence is reasonable
+        confidence = max(confidence, 0.4)
         
         return best_emotion, confidence
     

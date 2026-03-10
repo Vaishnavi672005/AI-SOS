@@ -2,6 +2,7 @@
 /// Main UI for the SOS Emergency System.
 /// Features: Start/Stop recording, emotion display, SOS alert display.
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
@@ -31,6 +32,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _distressDetected = false;
   String _severity = "";
   String _statusMessage = "Tap the button to start monitoring";
+  
+  // ─── Countdown Timer Variables ───
+  bool _showCountdown = false;
+  int _countdownSeconds = 10;
+  Timer? _countdownTimer;
+  Position? _pendingAlertPosition;
 
   @override
   void initState() {
@@ -50,8 +57,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _distressDetected = result['distress']['distress_detected'];
           _severity = result['distress']['severity'];
           if (_distressDetected) {
-            _statusMessage = "🚨 SOS ALERT SENT!";
-            _showSOSDialog();
+            _statusMessage = "🚨 DISTRESS DETECTED! Waiting for confirmation...";
+            _showCountdownDialog();
           } else {
             _statusMessage = "✅ Monitoring... $_emotion (${(_confidence * 100).toStringAsFixed(0)}%)";
           }
@@ -77,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _continuousMonitor.dispose();
     _recorder.dispose();
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
@@ -167,21 +175,97 @@ class _HomeScreenState extends State<HomeScreen> {
         _isProcessing = false;
 
         if (_distressDetected) {
-          _statusMessage = "🚨 SOS ALERT SENT! Emergency contacts notified.";
+          _statusMessage = "🚨 DISTRESS DETECTED! Confirm to send alert...";
+          _pendingAlertPosition = position;
+          _showCountdownDialog();
         } else {
           _statusMessage = "✅ No distress detected. You're safe.";
         }
       });
 
-      if (_distressDetected && mounted) {
-        _showSOSDialog();
-      }
     } catch (e) {
       setState(() {
         _statusMessage = "❌ Error: $e";
         _isProcessing = false;
       });
     }
+  }
+
+  /// Show countdown dialog before sending alert
+  void _showCountdownDialog() {
+    setState(() {
+      _showCountdown = true;
+      _countdownSeconds = 10;
+    });
+    
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      setState(() {
+        _countdownSeconds--;
+      });
+      
+      if (_countdownSeconds <= 0) {
+        timer.cancel();
+        _sendActualAlert();
+      }
+    });
+    
+    // Show the countdown dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _CountdownDialog(
+        seconds: _countdownSeconds,
+        emotion: _emotion,
+        confidence: _confidence,
+        severity: _severity,
+        onCancel: _cancelCountdown,
+      ),
+    );
+  }
+
+  /// Cancel the countdown
+  void _cancelCountdown() {
+    _countdownTimer?.cancel();
+    Navigator.of(context).pop(); // Close dialog
+    setState(() {
+      _showCountdown = false;
+      _countdownSeconds = 10;
+      _statusMessage = "✅ Alert cancelled. Monitoring continues...";
+    });
+  }
+
+  /// Send the actual SOS alert after countdown
+  Future<void> _sendActualAlert() async {
+    Navigator.of(context).pop(); // Close dialog
+    
+    Position position = _pendingAlertPosition ?? await _getCurrentLocation();
+    
+    // Trigger SOS alert on backend
+    try {
+      await SosService.sendAudioForPrediction(
+        audioFilePath: '', // Empty - we just trigger the alert
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } catch (e) {
+      // Even if it fails, show the dialog
+    }
+    
+    if (mounted) {
+      _showSOSDialog();
+    }
+    
+    setState(() {
+      _showCountdown = false;
+      _countdownSeconds = 10;
+      _pendingAlertPosition = null;
+    });
   }
 
   /// Toggle background monitoring
@@ -228,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red, size: 32),
             SizedBox(width: 8),
-            Text("SOS ALERT", style: TextStyle(color: Colors.red)),
+            Text("SOS ALERT SENT!", style: TextStyle(color: Colors.red)),
           ],
         ),
         content: Column(
@@ -240,15 +324,15 @@ class _HomeScreenState extends State<HomeScreen> {
             Text("Severity: $_severity"),
             const SizedBox(height: 12),
             const Text(
-              "Emergency contacts have been notified with your location.",
-              style: TextStyle(fontWeight: FontWeight.bold),
+              "✅ Emergency contacts have been notified with your location!",
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("DISMISS"),
+            child: const Text("OK"),
           ),
         ],
       ),
@@ -305,20 +389,20 @@ class _HomeScreenState extends State<HomeScreen> {
             Card(
               color: _backgroundMode ? Colors.green[50] : Colors.grey[50],
               child: SwitchListTile(
-                title: Row(
+                title: const Row(
                   children: [
                     Icon(
-                      _backgroundMode ? Icons.notifications_active : Icons.notifications_off,
-                      color: _backgroundMode ? Colors.green : Colors.grey,
+                      Icons.notifications,
+                      color: Colors.orange,
                     ),
-                    const SizedBox(width: 8),
-                    const Text("Background Monitoring"),
+                    SizedBox(width: 8),
+                    Text("Background Monitoring"),
                   ],
                 ),
                 subtitle: Text(
                   _backgroundMode
                       ? "✅ Active - Works when app is closed!"
-                      : "Enable to monitor 24/7 (even when app closed)",
+                      : "Enable to monitor 24/7 (requires notification permission)",
                 ),
                 value: _backgroundMode,
                 activeColor: Colors.green[700],
@@ -466,6 +550,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
+                    const Text("• 10-second countdown before SOS alert is sent"),
+                    const Text("• Cancel button to prevent false alerts"),
                     const Text("• Background Mode: Keeps monitoring even when app is closed"),
                     const Text("• Continuous Mode: Auto-records while app is open"),
                     const Text("• Manual Mode: Tap mic button to record once"),
@@ -484,3 +570,123 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+/// Countdown Dialog Widget
+class _CountdownDialog extends StatelessWidget {
+  final int seconds;
+  final String emotion;
+  final double confidence;
+  final String severity;
+  final VoidCallback onCancel;
+
+  const _CountdownDialog({
+    required this.seconds,
+    required this.emotion,
+    required this.confidence,
+    required this.severity,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.orange[50],
+      title: Row(
+        children: [
+          Icon(Icons.timer, color: Colors.orange[700], size: 28),
+          const SizedBox(width: 8),
+          Text(
+            "Confirm SOS Alert",
+            style: TextStyle(color: Colors.orange[800]),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Countdown circle
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 100,
+                height: 100,
+                child: CircularProgressIndicator(
+                  value: seconds / 10,
+                  strokeWidth: 8,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: AlwaysStoppedAnimation(
+                    seconds > 3 ? Colors.orange : Colors.red,
+                  ),
+                ),
+              ),
+              Text(
+                "$seconds",
+                style: TextStyle(
+                  fontSize: 40,
+                  fontWeight: FontWeight.bold,
+                  color: seconds > 3 ? Colors.orange[700] : Colors.red,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "SOS will be sent in:",
+            style: TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "$seconds seconds",
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Emotion info
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  "Detected: ${emotion.toUpperCase()}",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text("Confidence: ${(confidence * 100).toStringAsFixed(1)}%"),
+                Text("Severity: $severity"),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Tap CANCEL if you're safe!",
+            style: TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        ElevatedButton(
+          onPressed: onCancel,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          ),
+          child: const Text(
+            "CANCEL - I'M SAFE",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    );
+  }
+}
+

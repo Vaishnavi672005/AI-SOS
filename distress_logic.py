@@ -24,8 +24,8 @@ class DistressDetector:
     SAFE_EMOTIONS = ['happy', 'neutral']
     
     # Lower confidence thresholds for more sensitive detection
-    HIGH_CONFIDENCE_THRESHOLD = 0.5
-    MODERATE_CONFIDENCE_THRESHOLD = 0.25
+    HIGH_CONFIDENCE_THRESHOLD = 0.6  # Increased from 0.5
+    MODERATE_CONFIDENCE_THRESHOLD = 0.45  # Increased from 0.25
     
     def __init__(self):
         """Initialize the distress detector."""
