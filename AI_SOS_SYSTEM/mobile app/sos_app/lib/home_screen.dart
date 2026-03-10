@@ -503,8 +503,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    const Text("- 30-second countdown before SOS alert is sent"),
-                    const Text("- Tap CANCEL to stop the alert within 30 seconds"),
+                    const Text("- 20-second countdown before SOS alert is sent"),
+                    const Text("- Tap CANCEL to stop the alert within 20 seconds"),
                     const Text("- Background Mode: Keeps monitoring when app is closed"),
                     const Text("- Continuous Mode: Auto-records while app is open"),
                     const Text("- Manual Mode: Tap mic button to record once"),
@@ -547,7 +547,7 @@ class _CountdownPage extends StatefulWidget {
 }
 
 class _CountdownPageState extends State<_CountdownPage> {
-  int _secondsRemaining = 30;
+  int _secondsRemaining = 20;
   Timer? _timer;
   bool _cancelled = false;
 
@@ -624,7 +624,7 @@ class _CountdownPageState extends State<_CountdownPage> {
                     width: 150,
                     height: 150,
                     child: CircularProgressIndicator(
-                      value: _secondsRemaining / 30,
+                      value: _secondsRemaining / 20,
                       strokeWidth: 12,
                       backgroundColor: Colors.grey[300],
                       valueColor: AlwaysStoppedAnimation(
