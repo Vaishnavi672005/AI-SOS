@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'sos_service.dart';
 import 'continuous_monitor.dart';
 import 'background_sos_service.dart';
@@ -206,17 +207,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _playAlertSound() async {
+    try {
+      // Play a loud alarm sound using system notification tone
+      final player = AudioPlayer();
+      // Use URL source for a built-in alarm sound
+      await player.play(UrlSource('https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg'));
+    } catch (e) {
+      // If network sound fails, just print - the SOS will still go through
+      print('Alert sound error: $e');
+    }
+  }
+
   Future<void> _sendSOS() async {
+    // Play alert sound before sending SOS
+    await _playAlertSound();
+    
     Position position = _pendingAlertPosition ?? await _getCurrentLocation();
     
     try {
-      await SosService.sendAudioForPrediction(
-        audioFilePath: '',
+      // Use the dedicated trigger-sos endpoint for manual SOS trigger
+      await SosService.triggerSOS(
         latitude: position.latitude,
         longitude: position.longitude,
+        message: 'Emergency SOS triggered from AI SOS App - Emotion: $_emotion',
       );
     } catch (e) {
-      // Continue
+      // Continue even if there's an error - show dialog anyway
+      print('Error triggering SOS: $e');
     }
     
     if (mounted) {

@@ -110,4 +110,40 @@ class SosService {
       'sos_alert': backendResponse['sos_alert'],
     };
   }
+  
+  /// Trigger SOS alert manually after user confirms in countdown
+  /// This is called when the 20-second countdown expires
+  static Future<Map<String, dynamic>> triggerSOS({
+    required double latitude,
+    required double longitude,
+    String? message,
+  }) async {
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/trigger-sos'));
+      
+      // Attach GPS coordinates as form fields
+      request.fields['latitude'] = latitude.toString();
+      request.fields['longitude'] = longitude.toString();
+      
+      if (message != null) {
+        request.fields['message'] = message;
+      }
+      
+      print('📤 Triggering SOS alert...');
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        var result = jsonDecode(response.body);
+        print('✅ SOS triggered successfully');
+        return {'success': true, 'alert': result};
+      } else {
+        print('❌ Server error: ${response.statusCode}');
+        return {'error': 'Server returned ${response.statusCode}'};
+      }
+    } catch (e) {
+      print('❌ Connection error: $e');
+      return {'error': 'Could not connect to server: $e'};
+    }
+  }
 }
