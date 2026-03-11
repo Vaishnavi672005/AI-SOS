@@ -14,11 +14,17 @@ typedef OnEmotionResult = void Function(Map<String, dynamic> result);
 /// Callback type for status messages
 typedef OnStatusUpdate = void Function(String message);
 
+/// Callback type for when countdown starts (needs user confirmation)
+typedef OnCountdownStart = void Function(Map<String, dynamic> result);
+
 class ContinuousMonitor {
   final AudioRecorder _recorder = AudioRecorder();
   Timer? _monitorTimer;
   bool _isMonitoring = false;
   bool _isProcessing = false;
+  
+  /// Flag to track if user is in countdown/cancel mode
+  bool _isInCountdown = false;
 
   /// Duration of each recording clip (seconds)
   final int recordingDuration;
@@ -29,15 +35,32 @@ class ContinuousMonitor {
   /// Callbacks
   final OnEmotionResult onResult;
   final OnStatusUpdate onStatus;
+  final OnCountdownStart? onCountdownStart;
 
   ContinuousMonitor({
     this.recordingDuration = 4,
     this.pauseBetween = 1,
     required this.onResult,
     required this.onStatus,
+    this.onCountdownStart,
   });
 
   bool get isMonitoring => _isMonitoring;
+  
+  /// Check if user is currently in countdown/cancel mode
+  bool get isInCountdown => _isInCountdown;
+  
+  /// Called when user starts countdown - should pause monitoring
+  void startCountdown() {
+    _isInCountdown = true;
+    onStatus("⏳ Waiting for user confirmation...");
+  }
+  
+  /// Called when user cancels or confirms - can resume monitoring
+  void endCountdown() {
+    _isInCountdown = false;
+    onStatus("🔄 Resuming monitoring...");
+  }
 
   /// Start continuous monitoring loop
   Future<void> start() async {
@@ -105,10 +128,32 @@ class ContinuousMonitor {
       // 4. Deliver result
       onResult(result);
 
-      // 5. If distress detected with SOS triggered, pause monitoring briefly
+      // 5. If distress detected, pause monitoring and wait for user confirmation
+      // IMPORTANT: SOS is NOT sent automatically - it requires user confirmation!
+      // The mobile app shows a 20-second countdown dialog where user can cancel
       if (result['distress']?['distress_detected'] == true) {
-        onStatus("🚨 DISTRESS DETECTED — Alert sent. Pausing 30s...");
-        await Future.delayed(const Duration(seconds: 30));
+        // Signal that we're in countdown mode
+        _isInCountdown = true;
+        
+        // Notify via callback if provided
+        if (onCountdownStart != null) {
+          onCountdownStart!(result);
+        }
+        
+        // Update status - user needs to confirm or cancel
+        onStatus("🚨 DISTRESS DETECTED - Waiting for user confirmation...");
+        
+        // Wait here until user either confirms or cancels the alert
+        // The home_screen will call endCountdown() when done
+        while (_isInCountdown && _isMonitoring) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        
+        // After countdown ends (user confirmed or cancelled), pause briefly
+        if (_isMonitoring) {
+          onStatus("⏸️ Pausing briefly after alert action...");
+          await Future.delayed(const Duration(seconds: 10));
+        }
       }
     } catch (e) {
       onStatus("⚠️ Cycle error: $e");

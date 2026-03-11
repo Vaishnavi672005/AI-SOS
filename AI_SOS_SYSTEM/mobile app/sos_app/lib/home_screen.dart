@@ -49,14 +49,20 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() => _statusMessage = "Error: ${result['error']}");
           return;
         }
+        
+        // Store the result for potential countdown use
+        final distressDetected = result['distress']?['distress_detected'] == true;
+        
         setState(() {
           _emotion = result['prediction']['emotion'];
           _confidence = result['prediction']['confidence'];
-          _distressDetected = result['distress']['distress_detected'];
+          _distressDetected = distressDetected;
           _severity = result['distress']['severity'];
+          
           if (_distressDetected) {
             _statusMessage = "DISTRESS DETECTED! Waiting for confirmation...";
-            _showCountdownDialog();
+            _pendingAlertPosition = null; // Will be set when countdown starts
+            _showCountdownDialog(result);
           } else {
             _statusMessage = "Monitoring... $_emotion (${(_confidence * 100).toStringAsFixed(0)}%)";
           }
@@ -64,6 +70,10 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       onStatus: (msg) {
         if (mounted) setState(() => _statusMessage = msg);
+      },
+      // Callback when countdown starts - pause the monitor
+      onCountdownStart: (result) {
+        _continuousMonitor.startCountdown();
       },
     );
     
@@ -182,7 +192,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showCountdownDialog() {
+  void _showCountdownDialog([Map<String, dynamic>? result]) {
+    // For continuous mode, we need to get the current location
+    if (_continuousMode && _pendingAlertPosition == null) {
+      _getCurrentLocation().then((position) {
+        if (mounted) {
+          setState(() {
+            _pendingAlertPosition = position;
+          });
+          _presentCountdownDialog();
+        }
+      }).catchError((e) {
+        // If location fails, still show dialog with null position
+        if (mounted) {
+          _presentCountdownDialog();
+        }
+      });
+    } else {
+      _presentCountdownDialog();
+    }
+  }
+  
+  void _presentCountdownDialog() {
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -193,13 +224,22 @@ class _HomeScreenState extends State<HomeScreen> {
           position: _pendingAlertPosition,
           onCancel: () {
             Navigator.of(context).pop();
+            // Signal to continuous monitor that countdown ended (cancelled)
+            if (_continuousMode) {
+              _continuousMonitor.endCountdown();
+            }
             setState(() {
               _distressDetected = false;
+              _pendingAlertPosition = null;
               _statusMessage = "Alert cancelled. You are safe.";
             });
           },
           onSendSOS: () async {
             Navigator.of(context).pop();
+            // Signal to continuous monitor that countdown ended (confirmed)
+            if (_continuousMode) {
+              _continuousMonitor.endCountdown();
+            }
             await _sendSOS();
           },
         ),
